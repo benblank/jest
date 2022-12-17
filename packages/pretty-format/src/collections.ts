@@ -9,7 +9,7 @@
 import type {CompareKeys, Config, Printer, Refs} from './types';
 
 const getKeysOfEnumerableProperties = (
-  object: Record<string, unknown>,
+  object: object,
   compareKeys: CompareKeys,
 ) => {
   const rawKeys = Object.keys(object);
@@ -154,10 +154,16 @@ export function printListItems(
   printer: Printer,
 ): string {
   let result = '';
+  const extraPropertyKeys = getKeysOfEnumerableProperties(
+    list,
+    config.compareKeys,
+  ).filter(key => !/^(?:0|[1-9]\d*)$/.test(key));
+
+  if (list.length || extraPropertyKeys.length) {
+    result += config.spacingOuter;
+  }
 
   if (list.length) {
-    result += config.spacingOuter;
-
     const indentationNext = indentation + config.indent;
 
     for (let i = 0; i < list.length; i++) {
@@ -172,13 +178,29 @@ export function printListItems(
         result += printer(list[i], config, indentationNext, depth, refs);
       }
 
-      if (i < list.length - 1) {
+      if (i < list.length - 1 || extraPropertyKeys.length) {
         result += `,${config.spacingInner}`;
       } else if (!config.min) {
         result += ',';
       }
     }
+  }
 
+  if (extraPropertyKeys.length) {
+    result += printSelectedProperties(
+      // The `ArrayLike` type doesn't allow string keys, but the actual JS types
+      // it refers to may contain them.
+      list as ArrayLike<unknown> & {[key: string]: unknown},
+      extraPropertyKeys,
+      config,
+      indentation,
+      depth,
+      refs,
+      printer,
+    );
+  }
+
+  if (list.length || extraPropertyKeys.length) {
     result += config.spacingOuter + indentation;
   }
 
@@ -204,23 +226,46 @@ export function printObjectProperties(
   if (keys.length) {
     result += config.spacingOuter;
 
-    const indentationNext = indentation + config.indent;
-
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      const name = printer(key, config, indentationNext, depth, refs);
-      const value = printer(val[key], config, indentationNext, depth, refs);
-
-      result += `${indentationNext + name}: ${value}`;
-
-      if (i < keys.length - 1) {
-        result += `,${config.spacingInner}`;
-      } else if (!config.min) {
-        result += ',';
-      }
-    }
+    result += printSelectedProperties(
+      val,
+      keys,
+      config,
+      indentation,
+      depth,
+      refs,
+      printer,
+    );
 
     result += config.spacingOuter + indentation;
+  }
+
+  return result;
+}
+
+function printSelectedProperties(
+  val: Record<string, unknown>,
+  keys: Array<string>,
+  config: Config,
+  indentation: string,
+  depth: number,
+  refs: Refs,
+  printer: Printer,
+): string {
+  let result = '';
+  const indentationNext = indentation + config.indent;
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    const name = printer(key, config, indentationNext, depth, refs);
+    const value = printer(val[key], config, indentationNext, depth, refs);
+
+    result += `${indentationNext + name}: ${value}`;
+
+    if (i < keys.length - 1) {
+      result += `,${config.spacingInner}`;
+    } else if (!config.min) {
+      result += ',';
+    }
   }
 
   return result;
